@@ -1,5 +1,5 @@
-NM_NAME		=	nm
-OTOOL_NAME	=	otool
+NM_NAME		=	ft_nm
+OTOOL_NAME	=	ft_otool
 SHEL		=	/bin/bash
 
 LIBFT_DIR	=	libft/

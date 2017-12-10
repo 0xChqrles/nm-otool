@@ -18,6 +18,24 @@
 # include <fcntl.h>
 # include <sys/stat.h>
 # include <stdlib.h>
+# include <stdbool.h>
 # include "libft.h"
+
+typedef				struct s_symbol
+{
+	char			*name;
+	char			type;
+	uint64_t		value;
+	struct s_symbol	*next;
+}					t_symbol;
+
+typedef				struct s_pflags
+{
+	unsigned char	text_nsect;
+	unsigned char	data_nsect;
+	unsigned char	bss_nsect;
+}					t_pflags;
+
+int a = 0;
 
 #endif
