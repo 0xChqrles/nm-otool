@@ -88,7 +88,7 @@ void		bubblesort_symbols(t_symbol **syms)
 	}
 }
 
-void		print_symbols(t_symbol **syms)
+void		print_symbols(t_symbol **syms, char arch)
 {
 	t_symbol	*tmp;
 
@@ -96,51 +96,168 @@ void		print_symbols(t_symbol **syms)
 	while (tmp)
 	{
 		if (tmp->type == 'U' || tmp->type == 'u')
-			ft_printf("%17c", ' ');
+			ft_printf(arch == ARCH_64 ? "%17c" : "%9c", ' ');
 		else
-			ft_printf("%016llx ", tmp->value);
+			ft_printf(arch == ARCH_64 ? "%016llx " : "%08llx ", tmp->value);
 		ft_printf("%1c %s\n", tmp->type, tmp->name);
 		tmp = tmp->next;
 	}
 }
 
-char		get_sect(uint16_t n_sect, t_pflags pflags)
+void		*new_sect(char type, int n)
 {
-	if (n_sect == pflags.text_nsect)
-		return ('T');
-	else if (n_sect == pflags.data_nsect)
-		return ('D');
-	else if (n_sect == pflags.bss_nsect)
-		return ('B');
-	else
-		return ('S');
+	t_sect	*new;
+
+	if (!(new = malloc(sizeof(t_sect))))
+		return (NULL);
+	new->type = type;
+	new->n = n;
+	new->next = NULL;
+	return (new);
 }
 
-char		get_type(struct nlist_64 sym, t_pflags pflags)
+int			add_sect(t_sect **sect, char type)
+{
+	t_sect	*tmp;
+	int		n;
+
+	n = 1;
+	if (!(*sect))
+	{
+		if (!(*sect = new_sect(type, n)))
+			return (-1);
+		return (0);
+	}
+	tmp = *sect;
+	while (++n && tmp->next)
+		tmp = tmp->next;
+	if (!(tmp->next = new_sect(type, n)))
+		return (-1);
+	return (0);
+}
+
+void		free_sect(t_sect **sect)
+{
+	t_sect	*tmp;
+	t_sect	*tmp2;
+
+	tmp = *sect;
+	while (tmp)
+	{
+		tmp2 = tmp;
+		tmp = tmp->next;
+		free(tmp);
+	}
+}
+
+int			handle_sectname(char *sectname, t_sect **sect)
+{
+	if ((!ft_strcmp(sectname, SECT_TEXT)))
+		return (add_sect(sect, 'T'));
+	else if (!ft_strcmp(sectname, SECT_DATA))
+		return (add_sect(sect, 'D'));
+	else if (!ft_strcmp(sectname, SECT_BSS))
+		return (add_sect(sect, 'B'));
+	else
+		return (add_sect(sect, 'S'));
+}
+
+int			get_section(struct segment_command *sg, t_sect **sect)
+{
+	struct section	*s;
+	uint32_t		i;
+
+	i = 0;
+	s = (struct section*)((size_t)sg + sizeof(struct segment_command));
+	while (i < sg->nsects)
+		if (handle_sectname((s + i++)->sectname, sect) < 0)
+			return (-1);
+	return (0);
+}
+
+int			get_section_64(struct segment_command_64 *sg, t_sect **sect)
+{
+	struct section_64	*s;
+	uint32_t			i;
+
+	i = 0;
+	s = (struct section_64*)((size_t)sg + sizeof(struct segment_command_64));
+	while (i < sg->nsects)
+		if (handle_sectname((s + i++)->sectname, sect) < 0)
+			return (-1);
+	return (0);
+}
+
+char		get_secttype(t_sect **sect, uint16_t n_sect)
+{
+	t_sect	*tmp;
+
+	tmp = *sect;
+	while (tmp)
+	{
+		if (tmp->n == n_sect)
+			return (tmp->type);
+		tmp = tmp->next;
+	}
+	return ('S');
+}
+
+char		get_type(uint64_t n_value, uint16_t n_sect, uint16_t n_type, t_sect *sect)
 {
 	char		type;
-	uint16_t	n_type;
+	uint16_t	n_type_mask;
 
 	type = '?';
-	n_type = sym.n_type & N_TYPE;
-	if (n_type == N_UNDF)
-		type = sym.n_value ? 'C' : 'U';
-	else if (n_type == N_PBUD)
+	n_type_mask = n_type & N_TYPE;
+	if (n_type_mask == N_UNDF)
+		type = n_value ? 'C' : 'U';
+	else if (n_type_mask == N_PBUD)
 		type = 'U';
-	else if (n_type == N_ABS)
+	else if (n_type_mask == N_ABS)
 		type = 'A';
-	else if (n_type == N_INDR)
+	else if (n_type_mask == N_INDR)
 		type = 'I';
-	else if (n_type == N_SECT)
-		type = get_sect(sym.n_sect, pflags);
-	if (sym.n_type & N_STAB)
+	else if (n_type_mask == N_SECT)
+		type = get_secttype(&sect, n_sect);
+	if (n_type_mask & N_STAB)
 		type = 'Z';
-	if (!(sym.n_type & N_EXT) && type != '?')
-		type -= 32;
+	if (!(n_type & N_EXT) && type != '?')
+		type += 32;
 	return (type);
 }
 
-void		get_symbols(struct symtab_command *sym, t_pflags pflags, char *ptr)
+int		get_symbols(struct symtab_command *sym, t_sect *sect, char *ptr)
+{
+	int				i;
+	char			*strtab;
+	struct nlist	*symtab;
+	t_symbol		*syms;
+	char			type;
+
+	i = 0;
+	syms = NULL;
+	symtab = (struct nlist*)((size_t)ptr + sym->symoff);
+	strtab = (char*)((size_t)ptr + sym->stroff);
+	while (i < (int)sym->nsyms)
+	{
+		if (symtab[i].n_type & N_STAB && ++i)
+			continue;
+		if ((symtab[i].n_type & N_TYPE) == N_SECT && symtab[i].n_desc == N_ARM_THUMB_DEF)
+			symtab[i].n_value |= 1;
+		type = get_type(symtab[i].n_value, symtab[i].n_sect, symtab[i].n_type, sect);
+		if (add_symbol(&syms, symtab[i].n_value, type, strtab + symtab[i].n_un.n_strx) < 0)
+			return (-1);
+		i++;
+	}
+	if (!syms)
+		return (-1);
+	bubblesort_symbols(&syms);
+	print_symbols(&syms, ARCH_32);
+	free_symbol(&syms);
+	return (0);
+}
+
+int		get_symbols_64(struct symtab_command *sym, t_sect *sect, char *ptr)
 {
 	int				i;
 	char			*strtab;
@@ -156,63 +273,66 @@ void		get_symbols(struct symtab_command *sym, t_pflags pflags, char *ptr)
 	{
 		if (symtab[i].n_type & N_STAB && ++i)
 			continue;
-		if (!(type = get_type(symtab[i], pflags))
-		|| add_symbol(&syms, symtab[i].n_value, type,
-		strtab + symtab[i].n_un.n_strx) < 0)
-			return ;
+		type = get_type(symtab[i].n_value, symtab[i].n_sect, symtab[i].n_type, sect);
+		if (add_symbol(&syms, symtab[i].n_value, type, strtab + symtab[i].n_un.n_strx) < 0)
+			return (-1);
 		i++;
 	}
 	if (!syms)
-		return ;
+		return (-1);
 	bubblesort_symbols(&syms);
-	print_symbols(&syms);
+	print_symbols(&syms, ARCH_64);
 	free_symbol(&syms);
+	return (0);
 }
 
-t_pflags		get_pflags_64(struct segment_command_64 *sg)
+int			handle_mach(char *ptr, char arch, int ncmds, struct load_command *lc)
 {
-	t_pflags			pflags;
-	struct section_64	*s;
-	uint32_t			i;
-
-	i = 0;
-	s = (struct section_64*)((size_t)sg + sizeof(struct segment_command_64));
-	while (i < sg->nsects)
-	{
-		if (!ft_strcmp((s + i)->sectname, SECT_TEXT)
-		&& !ft_strcmp((s + i)->segname, SEG_TEXT))
-			pflags.text_nsect = i + 1;
-		else if (!ft_strcmp((s + i)->sectname, SECT_DATA)
-		&& !ft_strcmp((s + i)->segname, SEG_DATA))
-			pflags.data_nsect = i + 1;
-		else if (!ft_strcmp((s + i)->sectname, SECT_BSS)
-		&& !ft_strcmp((s + i)->segname, SEG_DATA))
-			pflags.bss_nsect = i + 1;
-		i++;
-	}
-	return (pflags);
-}
-
-void			handle_64(char *ptr)
-{
-	int						i;
-	t_pflags				pflags;
-	struct mach_header_64	*header;
-	struct load_command		*lc;
+	t_sect					*sect;
 	struct symtab_command	*sym;
 
-	i = 0;
-	header = (struct mach_header_64*)ptr;
-	lc = (struct load_command*)((size_t)ptr + sizeof(*header));
-	while (i++ < (int)header->ncmds)
+	(void)arch;
+	sect = NULL;
+	while (ncmds--)
 	{
 		if (lc->cmd == LC_SYMTAB)
 			sym = (struct symtab_command*)lc;
-		else if (lc->cmd == LC_SEGMENT_64)
-			pflags = get_pflags_64((struct segment_command_64*)lc);
+		else if (lc->cmd == LC_SEGMENT_64
+		&& get_section_64((struct segment_command_64*)lc, &sect) < 0)
+			return (-1);
+		else if (lc->cmd == LC_SEGMENT
+		&& get_section((struct segment_command*)lc, &sect) < 0)
+			return (-1);
 		lc = (void*)((size_t)lc + lc->cmdsize);
 	}
-	get_symbols(sym, pflags, ptr);
+	if ((arch == ARCH_64 && get_symbols_64(sym, sect, ptr) < 0)
+	|| (arch == ARCH_32 && get_symbols(sym, sect, ptr) < 0))
+		return (-1);
+	free_sect(&sect);
+	return (0);
+}
+
+int			get_arch(char *ptr)
+{
+	struct mach_header		*mh;
+	struct mach_header_64	*mh_64;
+
+	mh = (struct mach_header*)ptr;
+	if (mh->magic == MH_MAGIC)
+		return (handle_mach(ptr, ARCH_32, mh->ncmds,
+		(struct load_command*)((size_t)ptr + sizeof(*mh))));
+	else if (mh->magic == MH_MAGIC_64)
+	{
+		mh_64 = (struct mach_header_64*)ptr;
+		return (handle_mach(ptr, ARCH_64, mh_64->ncmds,
+		(struct load_command*)((size_t)ptr + sizeof(*mh_64))));
+	}
+	else if (!ft_strncmp(ptr, ARMAG, SARMAG))
+	{
+		ft_printf("{red}[NM]{eoc} static library\n");
+		return (0);
+	}
+	return (-1);
 }
 
 int				pexit(char *s)
@@ -229,7 +349,7 @@ unsigned int	get_magic(char *ptr)
 	return (magic);
 }
 
-char			*get_binary(char *file)
+char			*get_binary(char *file, int *size)
 {
 	char		*ptr;
 	int			fd;
@@ -246,18 +366,21 @@ char			*get_binary(char *file)
 		ft_printf("{red}[NM]{eoc} %s : Invalid binary\n", file);
 		return (NULL);
 	}
+	*size = buf.st_size;
 	return (ptr);
 }
 
 int				main(int ac, char **av)
 {
 	char	*ptr;
+	int		size;
 
 	if (ac != 2)
 		return (pexit("{red}[NM]{eoc} Invalid agruments\n"));
 	(void)av;
-	if (!(ptr = get_binary(av[1])))
+	if (!(ptr = get_binary(av[1], &size)))
 		return (EXIT_FAILURE);
-	if (get_magic(ptr) == MH_MAGIC_64)
-		handle_64(ptr);
+	if (get_arch(ptr) < 0)
+		ft_printf("{red}[NM]{eoc} An error has occurred\n");
+	munmap(ptr, size);
 }

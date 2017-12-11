@@ -12,12 +12,18 @@
 
 #ifndef NM_H
 
+# define ARCH_64 1
+# define ARCH_32 2
+# define ARCH_AR 3
+
 # include <sys/mman.h>
 # include <mach-o/loader.h>
+# include <mach-o/fat.h>
 # include <mach-o/nlist.h>
 # include <fcntl.h>
 # include <sys/stat.h>
 # include <stdlib.h>
+# include <ar.h>
 # include <stdbool.h>
 # include "libft.h"
 
@@ -29,12 +35,12 @@ typedef				struct s_symbol
 	struct s_symbol	*next;
 }					t_symbol;
 
-typedef				struct s_pflags
+typedef				struct s_sect
 {
-	unsigned char	text_nsect;
-	unsigned char	data_nsect;
-	unsigned char	bss_nsect;
-}					t_pflags;
+	char			type;
+	int				n;
+	struct s_sect	*next;
+}					t_sect;
 
 int a = 0;
 
