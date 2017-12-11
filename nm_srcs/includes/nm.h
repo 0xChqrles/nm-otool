@@ -6,15 +6,20 @@
 /*   By: clanier <marvin@42.fr>                     +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2017/12/09 12:37:23 by clanier           #+#    #+#             */
-/*   Updated: 2017/12/09 13:28:06 by clanier          ###   ########.fr       */
+/*   Updated: 2017/12/11 16:56:14 by clanier          ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
 #ifndef NM_H
 
-# define ARCH_64 1
-# define ARCH_32 2
-# define ARCH_AR 3
+# define ARCH_VAL	0b00000001
+# define MACH_O		0b00000010
+# define FAT		0b00000100
+# define AR			0b00001000
+# define ARCH_64	0b00010000
+# define ARCH_32	0b00100000
+# define CIGAM		0b01000000
+# define MAGIC		0b10000000
 
 # include <sys/mman.h>
 # include <mach-o/loader.h>
@@ -41,6 +46,14 @@ typedef				struct s_sect
 	int				n;
 	struct s_sect	*next;
 }					t_sect;
+
+typedef				struct s_file
+{
+	char			*ptr;
+	char			*name;
+	size_t			size;
+	uint8_t			arch;
+}					t_file;
 
 int a = 0;
 

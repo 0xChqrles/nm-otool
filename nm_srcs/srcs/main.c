@@ -6,11 +6,29 @@
 /*   By: clanier <marvin@42.fr>                     +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2017/12/09 12:36:34 by clanier           #+#    #+#             */
-/*   Updated: 2017/12/09 21:14:04 by clanier          ###   ########.fr       */
+/*   Updated: 2017/12/11 17:44:14 by clanier          ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
 #include "nm.h"
+
+uint32_t	swap_uint16(uint16_t n)
+{
+	return ((n >> 8) | (n << 8));
+}
+
+uint32_t	swap_uint32(uint32_t n)
+{
+	n = ((n >> 8) & 0xFF00FF) | ((n << 8) | 0xFF00FF00);
+	return ((n >> 16) | (n << 16));
+}
+
+uint64_t	swap_uint64(uint64_t n)
+{
+	n = ((n >> 8) & 0xFF00FF00FF00FF) | ((n << 8) | 0xFF00FF00FF00FF00);
+	n = ((n >> 16) & 0xFFFF0000FFFF) | ((n << 16) & 0x0000FFFF0000FFFF);
+	return ((n >> 32) | (n << 32));
+}
 
 t_symbol	*new_symbol(uint64_t value, char type, char *name)
 {
@@ -226,7 +244,7 @@ char		get_type(uint64_t n_value, uint16_t n_sect, uint16_t n_type, t_sect *sect)
 	return (type);
 }
 
-int		get_symbols(struct symtab_command *sym, t_sect *sect, char *ptr)
+int		get_symbols(t_file file, struct symtab_command *sym, t_sect *sect)
 {
 	int				i;
 	char			*strtab;
@@ -236,8 +254,8 @@ int		get_symbols(struct symtab_command *sym, t_sect *sect, char *ptr)
 
 	i = 0;
 	syms = NULL;
-	symtab = (struct nlist*)((size_t)ptr + sym->symoff);
-	strtab = (char*)((size_t)ptr + sym->stroff);
+	symtab = (struct nlist*)((size_t)file.ptr + sym->symoff);
+	strtab = (char*)((size_t)file.ptr + sym->stroff);
 	while (i < (int)sym->nsyms)
 	{
 		if (symtab[i].n_type & N_STAB && ++i)
@@ -257,7 +275,7 @@ int		get_symbols(struct symtab_command *sym, t_sect *sect, char *ptr)
 	return (0);
 }
 
-int		get_symbols_64(struct symtab_command *sym, t_sect *sect, char *ptr)
+int		get_symbols_64(t_file file, struct symtab_command *sym, t_sect *sect)
 {
 	int				i;
 	char			*strtab;
@@ -267,8 +285,8 @@ int		get_symbols_64(struct symtab_command *sym, t_sect *sect, char *ptr)
 
 	i = 0;
 	syms = NULL;
-	symtab = (struct nlist_64*)((size_t)ptr + sym->symoff);
-	strtab = (char*)((size_t)ptr + sym->stroff);
+	symtab = (struct nlist_64*)((size_t)file.ptr + sym->symoff);
+	strtab = (char*)((size_t)file.ptr + sym->stroff);
 	while (i < (int)sym->nsyms)
 	{
 		if (symtab[i].n_type & N_STAB && ++i)
@@ -286,12 +304,11 @@ int		get_symbols_64(struct symtab_command *sym, t_sect *sect, char *ptr)
 	return (0);
 }
 
-int			handle_mach(char *ptr, char arch, int ncmds, struct load_command *lc)
+int			handle_mach(t_file file, int ncmds, struct load_command *lc)
 {
 	t_sect					*sect;
 	struct symtab_command	*sym;
 
-	(void)arch;
 	sect = NULL;
 	while (ncmds--)
 	{
@@ -305,82 +322,115 @@ int			handle_mach(char *ptr, char arch, int ncmds, struct load_command *lc)
 			return (-1);
 		lc = (void*)((size_t)lc + lc->cmdsize);
 	}
-	if ((arch == ARCH_64 && get_symbols_64(sym, sect, ptr) < 0)
-	|| (arch == ARCH_32 && get_symbols(sym, sect, ptr) < 0))
+	if ((file.arch & ARCH_64 && get_symbols_64(file, sym, sect) < 0)
+	|| (file.arch & ARCH_32 && get_symbols(file, sym, sect) < 0))
 		return (-1);
 	free_sect(&sect);
 	return (0);
 }
 
-int			get_arch(char *ptr)
+int			handle_mach_header(t_file file, struct mach_header *mh)
 {
-	struct mach_header		*mh;
 	struct mach_header_64	*mh_64;
 
-	mh = (struct mach_header*)ptr;
-	if (mh->magic == MH_MAGIC)
-		return (handle_mach(ptr, ARCH_32, mh->ncmds,
-		(struct load_command*)((size_t)ptr + sizeof(*mh))));
-	else if (mh->magic == MH_MAGIC_64)
+	if (file.arch & ARCH_32)
+		return (handle_mach(file, mh->ncmds,
+		(struct load_command*)((size_t)file.ptr + sizeof(*mh))));
+	else if (file.arch & ARCH_64)
 	{
-		mh_64 = (struct mach_header_64*)ptr;
-		return (handle_mach(ptr, ARCH_64, mh_64->ncmds,
-		(struct load_command*)((size_t)ptr + sizeof(*mh_64))));
-	}
-	else if (!ft_strncmp(ptr, ARMAG, SARMAG))
-	{
-		ft_printf("{red}[NM]{eoc} static library\n");
-		return (0);
+		mh_64 = (struct mach_header_64*)file.ptr;
+		return (handle_mach(file, mh_64->ncmds,
+		(struct load_command*)((size_t)file.ptr + sizeof(*mh_64))));
 	}
 	return (-1);
 }
 
-int				pexit(char *s)
+uint8_t		is_valid_arch(uint32_t magic)
+{
+	return (magic == MH_MAGIC_64 || magic == MH_CIGAM_64
+	|| magic == FAT_MAGIC_64 || magic == FAT_CIGAM_64
+	|| magic == MH_MAGIC || magic == MH_CIGAM
+	|| magic == FAT_MAGIC || magic == FAT_CIGAM ? ARCH_VAL : 0);
+}
+
+uint8_t		is_64_arch(uint32_t magic)
+{
+	return (magic == MH_MAGIC_64 || magic == MH_CIGAM_64
+	|| magic == FAT_MAGIC_64 || magic == FAT_CIGAM_64 ? ARCH_64 : ARCH_32);
+}
+
+uint8_t		is_cigam_arch(uint32_t magic)
+{
+	return (magic == MH_CIGAM_64 || magic == MH_CIGAM
+	|| magic == FAT_CIGAM || magic == FAT_CIGAM_64 ? CIGAM : MAGIC);
+}
+
+uint8_t		is_mach_arch(uint32_t magic)
+{
+	return (magic == MH_MAGIC_64 || magic == MH_MAGIC
+	|| magic == MH_CIGAM || magic == MH_CIGAM_64 ? MACH_O : FAT);
+}
+
+int			get_arch(t_file file)
+{
+	struct mach_header	*mh;
+
+	mh = (struct mach_header*)file.ptr;
+	file.arch = is_valid_arch(mh->magic) | is_mach_arch(mh->magic)
+	| is_64_arch(mh->magic) | is_cigam_arch(mh->magic);
+	if (file.arch & ARCH_VAL && file.arch & MACH_O)
+		return (handle_mach_header(file, mh));
+	else if (file.arch & ARCH_VAL && file.arch & FAT)
+	{
+		printf(file.arch & CIGAM ? "CIGAM\n" : "MAGIC\n");
+		return (0);
+	}
+	else if (!ft_strncmp(file.ptr, ARMAG, SARMAG))
+	{
+		ft_printf("{red}[NM]{eoc} static library\n");
+		return (0);
+	}
+	printf("%x\n", mh->magic);
+	return (-2);
+}
+
+int			pexit(char *s)
 {
 	ft_printf(s);
 	return (EXIT_FAILURE);
 }
 
-unsigned int	get_magic(char *ptr)
+int			init_file(char *name, t_file *file)
 {
-	unsigned int	magic;
-
-	magic = *(int*)ptr;
-	return (magic);
-}
-
-char			*get_binary(char *file, int *size)
-{
-	char		*ptr;
 	int			fd;
 	struct stat	buf;
 
-	if ((fd = open(file, O_RDONLY)) < 1 || fstat(fd, &buf) < 0)
-	{
-		ft_printf("{red}[NM]{eoc} %s : Invalid binary\n", file);
-		return (NULL);
-	}
-	ptr = mmap(0, buf.st_size, PROT_READ, MAP_PRIVATE, fd, 0);
-	if (ptr == MAP_FAILED)
-	{
-		ft_printf("{red}[NM]{eoc} %s : Invalid binary\n", file);
-		return (NULL);
-	}
-	*size = buf.st_size;
-	return (ptr);
+	if ((fd = open(name, O_RDONLY)) < 1 || fstat(fd, &buf) < 0)
+		return (-1);
+	if ((file->ptr = mmap(0, buf.st_size, PROT_READ, MAP_PRIVATE, fd, 0)) == MAP_FAILED)
+		return (-1);
+	file->name = ft_strdup(name);
+	file->size = buf.st_size;
+	file->arch = 0;
+	return (0);
 }
 
-int				main(int ac, char **av)
+int			main(int ac, char **av)
 {
-	char	*ptr;
-	int		size;
+	t_file	file;
+	int		err;
 
 	if (ac != 2)
 		return (pexit("{red}[NM]{eoc} Invalid agruments\n"));
-	(void)av;
-	if (!(ptr = get_binary(av[1], &size)))
-		return (EXIT_FAILURE);
-	if (get_arch(ptr) < 0)
-		ft_printf("{red}[NM]{eoc} An error has occurred\n");
-	munmap(ptr, size);
+	if (init_file(av[1], &file) < 0)
+		return (pexit("{red}[NM]{eoc} An error has occurred\n"));
+	if ((err = get_arch(file)) < 0)
+	{
+		if (err == -2)
+			return (pexit("{red}[NM]{eoc} Unknow file format\n"));
+		else
+			return (pexit("{red}[NM]{eoc} An error has occurred\n"));
+	}
+	free(file.name);
+	munmap(file.ptr, file.size);
 }
