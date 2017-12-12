@@ -6,20 +6,20 @@
 /*   By: clanier <marvin@42.fr>                     +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2017/12/09 12:36:34 by clanier           #+#    #+#             */
-/*   Updated: 2017/12/11 17:44:14 by clanier          ###   ########.fr       */
+/*   Updated: 2017/12/12 22:49:59 by clanier          ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
 #include "nm.h"
 
-uint32_t	swap_uint16(uint16_t n, uint8_t arch)
+uint32_t	sw16(uint16_t n, uint8_t arch)
 {
 	if (arch & MAGIC)
 		return (n);
 	return ((n >> 8) | (n << 8));
 }
 
-uint32_t	swap_uint32(uint32_t n, uint8_t arch)
+uint32_t	sw32(uint32_t n, uint8_t arch)
 {
 	if (arch & MAGIC)
 		return (n);
@@ -27,7 +27,7 @@ uint32_t	swap_uint32(uint32_t n, uint8_t arch)
 	return ((n >> 16) | (n << 16));
 }
 
-uint64_t	swap_uint64(uint64_t n, uint8_t arch)
+uint64_t	sw64(uint64_t n, uint8_t arch)
 {
 	if (arch & MAGIC)
 		return (n);
@@ -120,9 +120,9 @@ void		print_symbols(t_symbol **syms, char arch)
 	while (tmp)
 	{
 		if (tmp->type == 'U' || tmp->type == 'u')
-			ft_printf(arch == ARCH_64 ? "%17c" : "%9c", ' ');
+			ft_printf(arch & ARCH_64 ? "%17c" : "%9c", ' ');
 		else
-			ft_printf(arch == ARCH_64 ? "%016llx " : "%08llx ", tmp->value);
+			ft_printf(arch & ARCH_64 ? "%016llx " : "%08llx ", tmp->value);
 		ft_printf("%1c %s\n", tmp->type, tmp->name);
 		tmp = tmp->next;
 	}
@@ -186,32 +186,32 @@ int			handle_sectname(char *sectname, t_sect **sect)
 		return (add_sect(sect, 'S'));
 }
 
-int			get_section(struct segment_command *sg, t_sect **sect)
+int			get_section(struct segment_command *sg, t_sect **sect, uint8_t arch)
 {
 	struct section	*s;
 	uint32_t		i;
 
 	i = 0;
 	s = (struct section*)((size_t)sg + sizeof(struct segment_command));
-	while (i++ < sg->nsects)
+	while (i++ < sw32(sg->nsects, arch))
 	{
-		if (handle_sectname((s)->sectname, sect) < 0)
+		if (handle_sectname(s->sectname, sect) < 0)
 			return (-1);
 		s = (struct section*)((size_t)s + sizeof(struct section));
 	}
 	return (0);
 }
 
-int			get_section_64(struct segment_command_64 *sg, t_sect **sect)
+int			get_section_64(struct segment_command_64 *sg, t_sect **sect, uint8_t arch)
 {
 	struct section_64	*s;
 	uint32_t			i;
 
 	i = 0;
 	s = (struct section_64*)((size_t)sg + sizeof(struct segment_command_64));
-	while (i++ < sg->nsects)
+	while (i++ < sw32(sg->nsects, arch))
 	{
-		if (handle_sectname((s)->sectname, sect) < 0)
+		if (handle_sectname(s->sectname, sect) < 0)
 			return (-1);
 		s = (struct section_64*)((size_t)s + sizeof(struct section_64));
 	}
@@ -232,7 +232,7 @@ char		get_secttype(t_sect **sect, uint16_t n_sect)
 	return ('S');
 }
 
-char		get_type(uint64_t n_value, uint16_t n_sect, uint16_t n_type, t_sect *sect)
+char		get_type(uint64_t n_value, uint8_t n_sect, uint8_t n_type, t_sect *sect)
 {
 	char		type;
 	uint16_t	n_type_mask;
@@ -256,6 +256,16 @@ char		get_type(uint64_t n_value, uint16_t n_sect, uint16_t n_type, t_sect *sect)
 	return (type);
 }
 
+int		dump_symbols(t_symbol **syms, uint8_t arch)
+{
+	if (!(*syms))
+		return (-1);
+	bubblesort_symbols(syms);
+	print_symbols(syms, arch);
+	free_symbol(syms);
+	return (0);
+}
+
 int		get_symbols(t_file file, struct symtab_command *sym, t_sect *sect)
 {
 	int				i;
@@ -266,25 +276,23 @@ int		get_symbols(t_file file, struct symtab_command *sym, t_sect *sect)
 
 	i = 0;
 	syms = NULL;
-	symtab = (struct nlist*)((size_t)file.ptr + sym->symoff);
-	strtab = (char*)((size_t)file.ptr + sym->stroff);
-	while (i < (int)sym->nsyms)
+	symtab = (struct nlist*)((size_t)file.ptr + sw32(sym->symoff, file.arch));
+	strtab = (char*)((size_t)file.ptr + sw32(sym->stroff, file.arch));
+	while ((uint32_t)i < sw32(sym->nsyms, file.arch))
 	{
 		if (symtab[i].n_type & N_STAB && ++i)
 			continue;
-		if ((symtab[i].n_type & N_TYPE) == N_SECT && symtab[i].n_desc == N_ARM_THUMB_DEF)
-			symtab[i].n_value |= 1;
-		type = get_type(symtab[i].n_value, symtab[i].n_sect, symtab[i].n_type, sect);
-		if (add_symbol(&syms, symtab[i].n_value, type, strtab + symtab[i].n_un.n_strx) < 0)
+		if ((symtab[i].n_type & N_TYPE) == N_SECT
+		&& sw16(symtab[i].n_desc, file.arch) == N_ARM_THUMB_DEF)
+			symtab[i].n_value = sw32(sw32(symtab[i].n_value, file.arch) | 1, file.arch);
+		type = get_type(sw32(symtab[i].n_value, file.arch),
+		symtab[i].n_sect, symtab[i].n_type, sect);
+		if (add_symbol(&syms, sw32(symtab[i].n_value, file.arch),
+		type, strtab + sw32(symtab[i].n_un.n_strx, file.arch)) < 0)
 			return (-1);
 		i++;
 	}
-	if (!syms)
-		return (-1);
-	bubblesort_symbols(&syms);
-	print_symbols(&syms, ARCH_32);
-	free_symbol(&syms);
-	return (0);
+	return (dump_symbols(&syms, file.arch));
 }
 
 int		get_symbols_64(t_file file, struct symtab_command *sym, t_sect *sect)
@@ -297,23 +305,20 @@ int		get_symbols_64(t_file file, struct symtab_command *sym, t_sect *sect)
 
 	i = 0;
 	syms = NULL;
-	symtab = (struct nlist_64*)((size_t)file.ptr + sym->symoff);
-	strtab = (char*)((size_t)file.ptr + sym->stroff);
-	while (i < (int)sym->nsyms)
+	symtab = (struct nlist_64*)((size_t)file.ptr + sw32(sym->symoff, file.arch));
+	strtab = (char*)((size_t)file.ptr + sw32(sym->stroff, file.arch));
+	while ((uint32_t)i < sw32(sym->nsyms, file.arch))
 	{
 		if (symtab[i].n_type & N_STAB && ++i)
 			continue;
-		type = get_type(symtab[i].n_value, symtab[i].n_sect, symtab[i].n_type, sect);
-		if (add_symbol(&syms, symtab[i].n_value, type, strtab + symtab[i].n_un.n_strx) < 0)
+		type = get_type(sw64(symtab[i].n_value, file.arch),
+		symtab[i].n_sect, symtab[i].n_type, sect);
+		if (add_symbol(&syms, sw64(symtab[i].n_value, file.arch),
+		type, strtab + sw32(symtab[i].n_un.n_strx, file.arch)) < 0)
 			return (-1);
 		i++;
 	}
-	if (!syms)
-		return (-1);
-	bubblesort_symbols(&syms);
-	print_symbols(&syms, ARCH_64);
-	free_symbol(&syms);
-	return (0);
+	return (dump_symbols(&syms, file.arch));
 }
 
 int			handle_mach(t_file file, int ncmds, struct load_command *lc)
@@ -324,15 +329,15 @@ int			handle_mach(t_file file, int ncmds, struct load_command *lc)
 	sect = NULL;
 	while (ncmds--)
 	{
-		if (lc->cmd == LC_SYMTAB)
+		if (sw32(lc->cmd, file.arch) == LC_SYMTAB)
 			sym = (struct symtab_command*)lc;
-		else if (lc->cmd == LC_SEGMENT_64
-		&& get_section_64((struct segment_command_64*)lc, &sect) < 0)
+		else if (sw32(lc->cmd, file.arch) == LC_SEGMENT_64
+		&& get_section_64((struct segment_command_64*)lc, &sect, file.arch) < 0)
 			return (-1);
-		else if (lc->cmd == LC_SEGMENT
-		&& get_section((struct segment_command*)lc, &sect) < 0)
+		else if (sw32(lc->cmd, file.arch) == LC_SEGMENT
+		&& get_section((struct segment_command*)lc, &sect, file.arch) < 0)
 			return (-1);
-		lc = (void*)((size_t)lc + lc->cmdsize);
+		lc = (void*)((size_t)lc + sw32(lc->cmdsize, file.arch));
 	}
 	if ((file.arch & ARCH_64 && get_symbols_64(file, sym, sect) < 0)
 	|| (file.arch & ARCH_32 && get_symbols(file, sym, sect) < 0))
@@ -346,49 +351,75 @@ int			handle_mach_header(t_file file, struct mach_header *mh)
 	struct mach_header_64	*mh_64;
 
 	if (file.arch & ARCH_32)
-		return (handle_mach(file, mh->ncmds,
+		return (handle_mach(file, sw32(mh->ncmds, file.arch),
 		(struct load_command*)((size_t)file.ptr + sizeof(*mh))));
 	else if (file.arch & ARCH_64)
 	{
 		mh_64 = (struct mach_header_64*)file.ptr;
-		return (handle_mach(file, mh_64->ncmds,
+		return (handle_mach(file, sw32(mh_64->ncmds, file.arch),
 		(struct load_command*)((size_t)file.ptr + sizeof(*mh_64))));
 	}
 	return (-1);
 }
 
+void		print_binary_arch(char *name, cpu_type_t cpu)
+{
+	ft_printf("\n%s (for architecture", name);
+	if (cpu == CPU_TYPE_X86)
+		ft_printf(" i386");
+	else if (cpu == CPU_TYPE_POWERPC)
+		ft_printf(" ppc");
+	ft_printf("):\n");
+}
+
 int			handle_fat_64(t_file file, uint32_t nfat_arch)
 {
 	struct fat_arch_64	*fat;
+	int					i;
 
+	if (nfat_arch < 1)
+		return (-1);
+	i = nfat_arch;
+	fat = (struct fat_arch_64*)((size_t)file.ptr + sizeof(struct fat_header));
+	while (sw32(fat->cputype, file.arch) != CPU_TYPE_X86_64 && i--)
+		fat = (struct fat_arch_64*)((size_t)fat + sizeof(struct fat_arch_64));
 	fat = (struct fat_arch_64*)((size_t)file.ptr + sizeof(struct fat_header));
 	while (nfat_arch--)
 	{
-		if (swap_uint32(fat->cputype, file.arch) == CPU_TYPE_X86_64)
-		{
-			file.ptr = (char*)((size_t)file.ptr + swap_uint64(fat->offset, file.arch));
-			return (get_arch(file));
-		}
+		if (!i)
+			print_binary_arch(file.name, sw32(fat->cputype, file.arch));
+		file.offset = sw64(fat->offset, file.arch);
+		if ((!i && get_arch(file) < 0)
+		|| (sw32(fat->cputype, file.arch) == CPU_TYPE_X86_64 && get_arch(file) < 0))
+			return (-1);
 		fat = (struct fat_arch_64*)((size_t)fat + sizeof(struct fat_arch_64));
 	}
-	return (-1);
+	return (0);
 }
 
 int			handle_fat(t_file file, uint32_t nfat_arch)
 {
 	struct fat_arch	*fat;
+	int				i;
 
+	if (nfat_arch < 1)
+		return (-1);
+	i = nfat_arch;
+	fat = (struct fat_arch*)((size_t)file.ptr + sizeof(struct fat_header));
+	while (sw32(fat->cputype, file.arch) != CPU_TYPE_X86_64 && --i)
+		fat = (struct fat_arch*)((size_t)fat + sizeof(struct fat_arch));
 	fat = (struct fat_arch*)((size_t)file.ptr + sizeof(struct fat_header));
 	while (nfat_arch--)
 	{
-		if (swap_uint32(fat->cputype, file.arch) == CPU_TYPE_X86_64)
-		{
-			file.ptr = (char*)((size_t)file.ptr + swap_uint32(fat->offset, file.arch));
-			return (get_arch(file));
-		}
+		if (!i)
+			print_binary_arch(file.name, sw32(fat->cputype, file.arch));
+		file.offset = sw32(fat->offset, file.arch);
+		if ((!i && get_arch(file) < 0)
+		|| (sw32(fat->cputype, file.arch) == CPU_TYPE_X86_64 && get_arch(file) < 0))
+			return (-1);
 		fat = (struct fat_arch*)((size_t)fat + sizeof(struct fat_arch));
 	}
-	return (-1);
+	return (0);
 }
 
 int			handle_fat_header(t_file file)
@@ -397,9 +428,9 @@ int			handle_fat_header(t_file file)
 
 	fh = (struct fat_header*)file.ptr;
 	if (file.arch & ARCH_32)
-		return (handle_fat(file, swap_uint32(fh->nfat_arch, file.arch)));
+		return (handle_fat(file, sw32(fh->nfat_arch, file.arch)));
 	else if (file.arch & ARCH_64)
-		return (handle_fat_64(file, swap_uint32(fh->nfat_arch, file.arch)));
+		return (handle_fat_64(file, sw32(fh->nfat_arch, file.arch)));
 	return (-1);
 }
 
@@ -433,6 +464,8 @@ int			get_arch(t_file file)
 {
 	struct mach_header	*mh;
 
+	if (file.offset)
+		file.ptr = (char*)((size_t)file.ptr + file.offset);
 	mh = (struct mach_header*)file.ptr;
 	file.arch = is_valid_arch(mh->magic) | is_mach_arch(mh->magic)
 	| is_64_arch(mh->magic) | is_cigam_arch(mh->magic);
@@ -445,7 +478,6 @@ int			get_arch(t_file file)
 		ft_printf("{red}[NM]{eoc} static library\n");
 		return (0);
 	}
-	printf("%x\n", mh->magic);
 	return (-2);
 }
 
@@ -467,6 +499,7 @@ int			init_file(char *name, t_file *file)
 	file->name = ft_strdup(name);
 	file->size = buf.st_size;
 	file->arch = 0;
+	file->offset = 0;
 	return (0);
 }
 

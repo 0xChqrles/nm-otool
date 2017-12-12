@@ -6,7 +6,7 @@
 /*   By: clanier <marvin@42.fr>                     +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2017/12/09 12:37:23 by clanier           #+#    #+#             */
-/*   Updated: 2017/12/11 16:56:14 by clanier          ###   ########.fr       */
+/*   Updated: 2017/12/12 16:46:24 by clanier          ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -53,6 +53,7 @@ typedef				struct s_file
 	char			*name;
 	size_t			size;
 	uint8_t			arch;
+	uint64_t		offset;
 }					t_file;
 
 int					get_arch(t_file file);
