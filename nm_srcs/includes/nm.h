@@ -55,6 +55,6 @@ typedef				struct s_file
 	uint8_t			arch;
 }					t_file;
 
-int a = 0;
+int					get_arch(t_file file);
 
 #endif

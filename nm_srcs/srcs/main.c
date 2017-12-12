@@ -12,20 +12,26 @@
 
 #include "nm.h"
 
-uint32_t	swap_uint16(uint16_t n)
+uint32_t	swap_uint16(uint16_t n, uint8_t arch)
 {
+	if (arch & MAGIC)
+		return (n);
 	return ((n >> 8) | (n << 8));
 }
 
-uint32_t	swap_uint32(uint32_t n)
+uint32_t	swap_uint32(uint32_t n, uint8_t arch)
 {
-	n = ((n >> 8) & 0xFF00FF) | ((n << 8) | 0xFF00FF00);
+	if (arch & MAGIC)
+		return (n);
+	n = ((n >> 8) & 0xFF00FF) | ((n << 8) & 0xFF00FF00);
 	return ((n >> 16) | (n << 16));
 }
 
-uint64_t	swap_uint64(uint64_t n)
+uint64_t	swap_uint64(uint64_t n, uint8_t arch)
 {
-	n = ((n >> 8) & 0xFF00FF00FF00FF) | ((n << 8) | 0xFF00FF00FF00FF00);
+	if (arch & MAGIC)
+		return (n);
+	n = ((n >> 8) & 0xFF00FF00FF00FF) | ((n << 8) & 0xFF00FF00FF00FF00);
 	n = ((n >> 16) & 0xFFFF0000FFFF) | ((n << 16) & 0x0000FFFF0000FFFF);
 	return ((n >> 32) | (n << 32));
 }
@@ -187,9 +193,12 @@ int			get_section(struct segment_command *sg, t_sect **sect)
 
 	i = 0;
 	s = (struct section*)((size_t)sg + sizeof(struct segment_command));
-	while (i < sg->nsects)
-		if (handle_sectname((s + i++)->sectname, sect) < 0)
+	while (i++ < sg->nsects)
+	{
+		if (handle_sectname((s)->sectname, sect) < 0)
 			return (-1);
+		s = (struct section*)((size_t)s + sizeof(struct section));
+	}
 	return (0);
 }
 
@@ -200,9 +209,12 @@ int			get_section_64(struct segment_command_64 *sg, t_sect **sect)
 
 	i = 0;
 	s = (struct section_64*)((size_t)sg + sizeof(struct segment_command_64));
-	while (i < sg->nsects)
-		if (handle_sectname((s + i++)->sectname, sect) < 0)
+	while (i++ < sg->nsects)
+	{
+		if (handle_sectname((s)->sectname, sect) < 0)
 			return (-1);
+		s = (struct section_64*)((size_t)s + sizeof(struct section_64));
+	}
 	return (0);
 }
 
@@ -345,6 +357,52 @@ int			handle_mach_header(t_file file, struct mach_header *mh)
 	return (-1);
 }
 
+int			handle_fat_64(t_file file, uint32_t nfat_arch)
+{
+	struct fat_arch_64	*fat;
+
+	fat = (struct fat_arch_64*)((size_t)file.ptr + sizeof(struct fat_header));
+	while (nfat_arch--)
+	{
+		if (swap_uint32(fat->cputype, file.arch) == CPU_TYPE_X86_64)
+		{
+			file.ptr = (char*)((size_t)file.ptr + swap_uint64(fat->offset, file.arch));
+			return (get_arch(file));
+		}
+		fat = (struct fat_arch_64*)((size_t)fat + sizeof(struct fat_arch_64));
+	}
+	return (-1);
+}
+
+int			handle_fat(t_file file, uint32_t nfat_arch)
+{
+	struct fat_arch	*fat;
+
+	fat = (struct fat_arch*)((size_t)file.ptr + sizeof(struct fat_header));
+	while (nfat_arch--)
+	{
+		if (swap_uint32(fat->cputype, file.arch) == CPU_TYPE_X86_64)
+		{
+			file.ptr = (char*)((size_t)file.ptr + swap_uint32(fat->offset, file.arch));
+			return (get_arch(file));
+		}
+		fat = (struct fat_arch*)((size_t)fat + sizeof(struct fat_arch));
+	}
+	return (-1);
+}
+
+int			handle_fat_header(t_file file)
+{
+	struct fat_header	*fh;
+
+	fh = (struct fat_header*)file.ptr;
+	if (file.arch & ARCH_32)
+		return (handle_fat(file, swap_uint32(fh->nfat_arch, file.arch)));
+	else if (file.arch & ARCH_64)
+		return (handle_fat_64(file, swap_uint32(fh->nfat_arch, file.arch)));
+	return (-1);
+}
+
 uint8_t		is_valid_arch(uint32_t magic)
 {
 	return (magic == MH_MAGIC_64 || magic == MH_CIGAM_64
@@ -381,10 +439,7 @@ int			get_arch(t_file file)
 	if (file.arch & ARCH_VAL && file.arch & MACH_O)
 		return (handle_mach_header(file, mh));
 	else if (file.arch & ARCH_VAL && file.arch & FAT)
-	{
-		printf(file.arch & CIGAM ? "CIGAM\n" : "MAGIC\n");
-		return (0);
-	}
+		return (handle_fat_header(file));
 	else if (!ft_strncmp(file.ptr, ARMAG, SARMAG))
 	{
 		ft_printf("{red}[NM]{eoc} static library\n");
