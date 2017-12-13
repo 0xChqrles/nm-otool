@@ -6,7 +6,7 @@
 /*   By: clanier <marvin@42.fr>                     +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2017/12/09 12:37:23 by clanier           #+#    #+#             */
-/*   Updated: 2017/12/12 16:46:24 by clanier          ###   ########.fr       */
+/*   Updated: 2017/12/13 21:02:56 by clanier          ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -20,6 +20,9 @@
 # define ARCH_32	0b00100000
 # define CIGAM		0b01000000
 # define MAGIC		0b10000000
+
+# define F_BEGIN	0b01
+# define F_OFFSET	0b10
 
 # include <sys/mman.h>
 # include <mach-o/loader.h>
@@ -51,7 +54,8 @@ typedef				struct s_file
 {
 	char			*ptr;
 	char			*name;
-	size_t			size;
+	long int		size;
+	long int		free_size;
 	uint8_t			arch;
 	uint64_t		offset;
 }					t_file;

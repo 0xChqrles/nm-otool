@@ -6,7 +6,7 @@
 /*   By: clanier <marvin@42.fr>                     +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2017/12/09 12:36:34 by clanier           #+#    #+#             */
-/*   Updated: 2017/12/12 22:49:59 by clanier          ###   ########.fr       */
+/*   Updated: 2017/12/13 21:56:17 by clanier          ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -87,6 +87,7 @@ void		bubblesort_symbols(t_symbol **syms)
 	t_symbol	*tmp;
 	t_symbol	*next;
 	bool		isSort;
+	char		cmp;
 
 	isSort = false;
 	while (!isSort && (isSort = true))
@@ -95,7 +96,8 @@ void		bubblesort_symbols(t_symbol **syms)
 		prev = NULL;
 		while (tmp && tmp->next)
 		{
-			if (ft_strcmp(tmp->name, tmp->next->name) > 0 && !(isSort = false))
+			cmp = ft_strcmp(tmp->name, tmp->next->name);
+			if ((cmp > 0 || (!cmp && tmp->type == 'I')) && !(isSort = false))
 			{
 				if (prev)
 					prev->next = tmp->next;
@@ -174,50 +176,6 @@ void		free_sect(t_sect **sect)
 	}
 }
 
-int			handle_sectname(char *sectname, t_sect **sect)
-{
-	if ((!ft_strcmp(sectname, SECT_TEXT)))
-		return (add_sect(sect, 'T'));
-	else if (!ft_strcmp(sectname, SECT_DATA))
-		return (add_sect(sect, 'D'));
-	else if (!ft_strcmp(sectname, SECT_BSS))
-		return (add_sect(sect, 'B'));
-	else
-		return (add_sect(sect, 'S'));
-}
-
-int			get_section(struct segment_command *sg, t_sect **sect, uint8_t arch)
-{
-	struct section	*s;
-	uint32_t		i;
-
-	i = 0;
-	s = (struct section*)((size_t)sg + sizeof(struct segment_command));
-	while (i++ < sw32(sg->nsects, arch))
-	{
-		if (handle_sectname(s->sectname, sect) < 0)
-			return (-1);
-		s = (struct section*)((size_t)s + sizeof(struct section));
-	}
-	return (0);
-}
-
-int			get_section_64(struct segment_command_64 *sg, t_sect **sect, uint8_t arch)
-{
-	struct section_64	*s;
-	uint32_t			i;
-
-	i = 0;
-	s = (struct section_64*)((size_t)sg + sizeof(struct segment_command_64));
-	while (i++ < sw32(sg->nsects, arch))
-	{
-		if (handle_sectname(s->sectname, sect) < 0)
-			return (-1);
-		s = (struct section_64*)((size_t)s + sizeof(struct section_64));
-	}
-	return (0);
-}
-
 char		get_secttype(t_sect **sect, uint16_t n_sect)
 {
 	t_sect	*tmp;
@@ -230,6 +188,15 @@ char		get_secttype(t_sect **sect, uint16_t n_sect)
 		tmp = tmp->next;
 	}
 	return ('S');
+}
+
+int			check_size(t_file *file, long int size, uint8_t flag)
+{
+	if (flag & F_BEGIN && file->size - size < 0)
+		return (-1);
+	if (flag & F_OFFSET && (file->free_size -= size) < 0)
+		return (-1);
+	return (0);
 }
 
 char		get_type(uint64_t n_value, uint8_t n_sect, uint8_t n_type, t_sect *sect)
@@ -254,6 +221,62 @@ char		get_type(uint64_t n_value, uint8_t n_sect, uint8_t n_type, t_sect *sect)
 	if (!(n_type & N_EXT) && type != '?')
 		type += 32;
 	return (type);
+}
+
+int			handle_sectname(char *sectname, t_sect **sect)
+{
+	if ((!ft_strcmp(sectname, SECT_TEXT)))
+		return (add_sect(sect, 'T'));
+	else if (!ft_strcmp(sectname, SECT_DATA))
+		return (add_sect(sect, 'D'));
+	else if (!ft_strcmp(sectname, SECT_BSS))
+		return (add_sect(sect, 'B'));
+	else
+		return (add_sect(sect, 'S'));
+}
+
+int			get_section(t_file file, struct segment_command *sg, t_sect **sect)
+{
+	struct section	*s;
+	uint32_t		i;
+
+	i = 0;
+	s = (struct section*)((size_t)sg + sizeof(struct segment_command));
+	if (check_size(&file, (long int)sizeof(struct segment_command)
+	- (long int)sw32(sg->cmdsize, file.arch)
+	+ (long int)sizeof(struct section), F_OFFSET) < 0)
+		return (-1);
+	while (i++ < sw32(sg->nsects, file.arch))
+	{
+		if (handle_sectname(s->sectname, sect) < 0)
+			return (-1);
+		if (check_size(&file, sizeof(struct section), F_OFFSET) < 0)
+			return (-1);
+		s = (struct section*)((size_t)s + sizeof(struct section));
+	}
+	return (0);
+}
+
+int			get_section_64(t_file file, struct segment_command_64 *sg, t_sect **sect)
+{
+	struct section_64	*s;
+	uint32_t			i;
+
+	i = 0;
+	s = (struct section_64*)((size_t)sg + sizeof(struct segment_command_64));
+	if (check_size(&file, (long int)sizeof(struct segment_command_64)
+	- (long int)sw32(sg->cmdsize, file.arch)
+	+ (long int)sizeof(struct section_64), F_OFFSET) < 0)
+		return (-1);
+	while (i++ < sw32(sg->nsects, file.arch))
+	{
+		if (handle_sectname(s->sectname, sect) < 0)
+			return (-1);
+		if (check_size(&file, sizeof(struct section_64), F_OFFSET) < 0)
+			return (-1);
+		s = (struct section_64*)((size_t)s + sizeof(struct section_64));
+	}
+	return (0);
 }
 
 int		dump_symbols(t_symbol **syms, uint8_t arch)
@@ -305,6 +328,9 @@ int		get_symbols_64(t_file file, struct symtab_command *sym, t_sect *sect)
 
 	i = 0;
 	syms = NULL;
+	if ((check_size(&file, sw32(sym->symoff, file.arch), F_BEGIN) < 0)
+	|| (check_size(&file, sw32(sym->stroff, file.arch), F_BEGIN) < 0))
+		return (-1);
 	symtab = (struct nlist_64*)((size_t)file.ptr + sw32(sym->symoff, file.arch));
 	strtab = (char*)((size_t)file.ptr + sw32(sym->stroff, file.arch));
 	while ((uint32_t)i < sw32(sym->nsyms, file.arch))
@@ -325,20 +351,26 @@ int			handle_mach(t_file file, int ncmds, struct load_command *lc)
 {
 	t_sect					*sect;
 	struct symtab_command	*sym;
+	size_t					sym_offset;
 
 	sect = NULL;
 	while (ncmds--)
 	{
-		if (sw32(lc->cmd, file.arch) == LC_SYMTAB)
+		if (sw32(lc->cmd, file.arch) == LC_SYMTAB && (sym_offset = file.free_size))
 			sym = (struct symtab_command*)lc;
 		else if (sw32(lc->cmd, file.arch) == LC_SEGMENT_64
-		&& get_section_64((struct segment_command_64*)lc, &sect, file.arch) < 0)
+		&& get_section_64(file, (struct segment_command_64*)lc, &sect) < 0)
 			return (-1);
 		else if (sw32(lc->cmd, file.arch) == LC_SEGMENT
-		&& get_section((struct segment_command*)lc, &sect, file.arch) < 0)
+		&& get_section(file, (struct segment_command*)lc, &sect) < 0)
+			return (-1);
+		if (check_size(&file, sw32(lc->cmdsize, file.arch), F_OFFSET) < 0)
 			return (-1);
 		lc = (void*)((size_t)lc + sw32(lc->cmdsize, file.arch));
 	}
+	file.free_size = file.size - sym_offset + sizeof(struct load_command) - sizeof(struct symtab_command);
+	if (file.free_size <= 0)
+		return (-1);
 	if ((file.arch & ARCH_64 && get_symbols_64(file, sym, sect) < 0)
 	|| (file.arch & ARCH_32 && get_symbols(file, sym, sect) < 0))
 		return (-1);
@@ -350,11 +382,19 @@ int			handle_mach_header(t_file file, struct mach_header *mh)
 {
 	struct mach_header_64	*mh_64;
 
+	if (check_size(&file, sizeof(struct load_command), F_OFFSET) < 0)
+		return (-1);
 	if (file.arch & ARCH_32)
+	{
+		if (check_size(&file, sizeof(struct mach_header_64), F_OFFSET) < 0)
+			return (-1);
 		return (handle_mach(file, sw32(mh->ncmds, file.arch),
 		(struct load_command*)((size_t)file.ptr + sizeof(*mh))));
+	}
 	else if (file.arch & ARCH_64)
 	{
+		if (check_size(&file, sizeof(struct mach_header_64), F_OFFSET) < 0)
+			return (-1);
 		mh_64 = (struct mach_header_64*)file.ptr;
 		return (handle_mach(file, sw32(mh_64->ncmds, file.arch),
 		(struct load_command*)((size_t)file.ptr + sizeof(*mh_64))));
@@ -381,7 +421,7 @@ int			handle_fat_64(t_file file, uint32_t nfat_arch)
 		return (-1);
 	i = nfat_arch;
 	fat = (struct fat_arch_64*)((size_t)file.ptr + sizeof(struct fat_header));
-	while (sw32(fat->cputype, file.arch) != CPU_TYPE_X86_64 && i--)
+	while (i && sw32(fat->cputype, file.arch) != CPU_TYPE_X86_64 && i--)
 		fat = (struct fat_arch_64*)((size_t)fat + sizeof(struct fat_arch_64));
 	fat = (struct fat_arch_64*)((size_t)file.ptr + sizeof(struct fat_header));
 	while (nfat_arch--)
@@ -389,8 +429,7 @@ int			handle_fat_64(t_file file, uint32_t nfat_arch)
 		if (!i)
 			print_binary_arch(file.name, sw32(fat->cputype, file.arch));
 		file.offset = sw64(fat->offset, file.arch);
-		if ((!i && get_arch(file) < 0)
-		|| (sw32(fat->cputype, file.arch) == CPU_TYPE_X86_64 && get_arch(file) < 0))
+		if ((!i && get_arch(file) < 0) || ((uint32_t)i == (nfat_arch + 1) && get_arch(file) < 0))
 			return (-1);
 		fat = (struct fat_arch_64*)((size_t)fat + sizeof(struct fat_arch_64));
 	}
@@ -406,7 +445,7 @@ int			handle_fat(t_file file, uint32_t nfat_arch)
 		return (-1);
 	i = nfat_arch;
 	fat = (struct fat_arch*)((size_t)file.ptr + sizeof(struct fat_header));
-	while (sw32(fat->cputype, file.arch) != CPU_TYPE_X86_64 && --i)
+	while (i && sw32(fat->cputype, file.arch) != CPU_TYPE_X86_64 && i--)
 		fat = (struct fat_arch*)((size_t)fat + sizeof(struct fat_arch));
 	fat = (struct fat_arch*)((size_t)file.ptr + sizeof(struct fat_header));
 	while (nfat_arch--)
@@ -414,8 +453,7 @@ int			handle_fat(t_file file, uint32_t nfat_arch)
 		if (!i)
 			print_binary_arch(file.name, sw32(fat->cputype, file.arch));
 		file.offset = sw32(fat->offset, file.arch);
-		if ((!i && get_arch(file) < 0)
-		|| (sw32(fat->cputype, file.arch) == CPU_TYPE_X86_64 && get_arch(file) < 0))
+		if ((!i && get_arch(file) < 0) || ((uint32_t)i == (nfat_arch + 1) && get_arch(file) < 0))
 			return (-1);
 		fat = (struct fat_arch*)((size_t)fat + sizeof(struct fat_arch));
 	}
@@ -426,6 +464,8 @@ int			handle_fat_header(t_file file)
 {
 	struct fat_header	*fh;
 
+	if (check_size(&file, sizeof(struct fat_header), F_BEGIN) < 0)
+		return (-1);
 	fh = (struct fat_header*)file.ptr;
 	if (file.arch & ARCH_32)
 		return (handle_fat(file, sw32(fh->nfat_arch, file.arch)));
@@ -466,6 +506,8 @@ int			get_arch(t_file file)
 
 	if (file.offset)
 		file.ptr = (char*)((size_t)file.ptr + file.offset);
+	if (check_size(&file, sizeof(struct mach_header), F_BEGIN) < 0)
+		return (-1);
 	mh = (struct mach_header*)file.ptr;
 	file.arch = is_valid_arch(mh->magic) | is_mach_arch(mh->magic)
 	| is_64_arch(mh->magic) | is_cigam_arch(mh->magic);
@@ -478,6 +520,7 @@ int			get_arch(t_file file)
 		ft_printf("{red}[NM]{eoc} static library\n");
 		return (0);
 	}
+//	ft_printf("%x\n", mh->magic);
 	return (-2);
 }
 
@@ -498,6 +541,7 @@ int			init_file(char *name, t_file *file)
 		return (-1);
 	file->name = ft_strdup(name);
 	file->size = buf.st_size;
+	file->free_size = buf.st_size;
 	file->arch = 0;
 	file->offset = 0;
 	return (0);
