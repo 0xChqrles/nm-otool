@@ -299,6 +299,9 @@ int		get_symbols(t_file file, struct symtab_command *sym, t_sect *sect)
 
 	i = 0;
 	syms = NULL;
+	if ((check_size(&file, sw32(sym->symoff, file.arch), F_BEGIN) < 0)
+	|| (check_size(&file, sw32(sym->stroff, file.arch), F_BEGIN) < 0))
+		return (-1);
 	symtab = (struct nlist*)((size_t)file.ptr + sw32(sym->symoff, file.arch));
 	strtab = (char*)((size_t)file.ptr + sw32(sym->stroff, file.arch));
 	while ((uint32_t)i < sw32(sym->nsyms, file.arch))
@@ -312,6 +315,8 @@ int		get_symbols(t_file file, struct symtab_command *sym, t_sect *sect)
 		symtab[i].n_sect, symtab[i].n_type, sect);
 		if (add_symbol(&syms, sw32(symtab[i].n_value, file.arch),
 		type, strtab + sw32(symtab[i].n_un.n_strx, file.arch)) < 0)
+			return (-1);
+		if (check_size(&file, sw32(sym->symoff, file.arch) + (i + 1) * sizeof(struct nlist), F_BEGIN) < 0)
 			return (-1);
 		i++;
 	}
@@ -341,6 +346,8 @@ int		get_symbols_64(t_file file, struct symtab_command *sym, t_sect *sect)
 		symtab[i].n_sect, symtab[i].n_type, sect);
 		if (add_symbol(&syms, sw64(symtab[i].n_value, file.arch),
 		type, strtab + sw32(symtab[i].n_un.n_strx, file.arch)) < 0)
+			return (-1);
+		if (check_size(&file, sw32(sym->symoff, file.arch) + (i + 1) * sizeof(struct nlist_64), F_BEGIN) < 0)
 			return (-1);
 		i++;
 	}
