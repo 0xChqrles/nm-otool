@@ -6,7 +6,7 @@
 /*   By: clanier <marvin@42.fr>                     +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2017/12/09 12:36:34 by clanier           #+#    #+#             */
-/*   Updated: 2017/12/13 21:56:17 by clanier          ###   ########.fr       */
+/*   Updated: 2017/12/14 20:08:39 by clanier          ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -424,7 +424,7 @@ int			handle_fat_64(t_file file, uint32_t nfat_arch)
 	struct fat_arch_64	*fat;
 	int					i;
 
-	if (nfat_arch < 1)
+	if (nfat_arch < 1 || check_size(&file, sizeof(struct fat_arch_64) * nfat_arch, F_OFFSET) < 0)
 		return (-1);
 	i = nfat_arch;
 	fat = (struct fat_arch_64*)((size_t)file.ptr + sizeof(struct fat_header));
@@ -448,7 +448,7 @@ int			handle_fat(t_file file, uint32_t nfat_arch)
 	struct fat_arch	*fat;
 	int				i;
 
-	if (nfat_arch < 1)
+	if (nfat_arch < 1 || check_size(&file, sizeof(struct fat_arch) * nfat_arch, F_OFFSET) < 0)
 		return (-1);
 	i = nfat_arch;
 	fat = (struct fat_arch*)((size_t)file.ptr + sizeof(struct fat_header));
@@ -471,7 +471,7 @@ int			handle_fat_header(t_file file)
 {
 	struct fat_header	*fh;
 
-	if (check_size(&file, sizeof(struct fat_header), F_BEGIN) < 0)
+	if (check_size(&file, sizeof(struct fat_header), F_OFFSET) < 0)
 		return (-1);
 	fh = (struct fat_header*)file.ptr;
 	if (file.arch & ARCH_32)
@@ -512,7 +512,11 @@ int			get_arch(t_file file)
 	struct mach_header	*mh;
 
 	if (file.offset)
+	{
+		file.size -= file.offset;
+		file.free_size = file.size;
 		file.ptr = (char*)((size_t)file.ptr + file.offset);
+	}
 	if (check_size(&file, sizeof(struct mach_header), F_BEGIN) < 0)
 		return (-1);
 	mh = (struct mach_header*)file.ptr;
@@ -527,7 +531,6 @@ int			get_arch(t_file file)
 		ft_printf("{red}[NM]{eoc} static library\n");
 		return (0);
 	}
-//	ft_printf("%x\n", mh->magic);
 	return (-2);
 }
 
