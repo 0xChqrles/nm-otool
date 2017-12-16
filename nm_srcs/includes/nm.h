@@ -6,7 +6,7 @@
 /*   By: clanier <marvin@42.fr>                     +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2017/12/09 12:37:23 by clanier           #+#    #+#             */
-/*   Updated: 2017/12/13 21:02:56 by clanier          ###   ########.fr       */
+/*   Updated: 2017/12/15 19:37:19 by clanier          ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -23,6 +23,17 @@
 
 # define F_BEGIN	0b01
 # define F_OFFSET	0b10
+
+# define OPT_F_MU	'U'
+# define OPT_F_U	'u'
+# define OPT_F_P	'p'
+# define OPT_F_J	'j'
+# define OPT_F_R	'r'
+# define OPT_MU		0b00001
+# define OPT_U		0b00010
+# define OPT_P		0b00100
+# define OPT_J		0b01000
+# define OPT_R		0b10000
 
 # include <sys/mman.h>
 # include <mach-o/loader.h>
@@ -58,8 +69,9 @@ typedef				struct s_file
 	long int		free_size;
 	uint8_t			arch;
 	uint64_t		offset;
+	uint16_t		opts;
 }					t_file;
 
-int					get_arch(t_file file);
+int					get_arch(t_file file, bool print_name);
 
 #endif

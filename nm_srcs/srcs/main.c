@@ -6,7 +6,7 @@
 /*   By: clanier <marvin@42.fr>                     +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2017/12/09 12:36:34 by clanier           #+#    #+#             */
-/*   Updated: 2017/12/14 20:08:39 by clanier          ###   ########.fr       */
+/*   Updated: 2017/12/15 19:47:24 by clanier          ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -81,6 +81,40 @@ void		free_symbol(t_symbol **syms)
 	}
 }
 
+void		swap_symbols(t_symbol **syms, t_symbol **tmp, t_symbol **next, t_symbol **prev)
+{
+	if (*prev)
+		(*prev)->next = (*tmp)->next;
+	else
+		*syms = (*tmp)->next;
+	(*next) = (*tmp)->next->next;
+	(*tmp)->next->next = *tmp;
+	(*tmp)->next = *next;
+	*tmp = (*tmp)->next;	
+}
+
+void		reverse_symbols(t_symbol **syms)
+{
+	t_symbol	*prev;
+	t_symbol	*tmp;
+	t_symbol	*next;
+
+	if (!*syms || !(*syms)->next)
+		return ;
+	tmp = *syms;
+	next = tmp->next;
+	prev = NULL;
+	while (next)
+	{
+		tmp->next = prev;
+		prev = tmp;
+		tmp = next;
+		next = next->next;
+	}
+	tmp->next = prev;
+	*syms = tmp;
+}
+
 void		bubblesort_symbols(t_symbol **syms)
 {
 	t_symbol	*prev;
@@ -98,36 +132,52 @@ void		bubblesort_symbols(t_symbol **syms)
 		{
 			cmp = ft_strcmp(tmp->name, tmp->next->name);
 			if ((cmp > 0 || (!cmp && tmp->type == 'I')) && !(isSort = false))
-			{
-				if (prev)
-					prev->next = tmp->next;
-			   	else
-					*syms = tmp->next;
-				next = tmp->next->next;
-				tmp->next->next = tmp;
-				tmp->next = next;
-				tmp = tmp->next;
-			}
+				swap_symbols(syms, &tmp, &next, &prev);
 			prev = tmp;
 			tmp = tmp ? tmp->next : NULL;
 		}
 	}
 }
 
-void		print_symbols(t_symbol **syms, char arch)
+void		print_symbols(t_file file, t_symbol **syms)
 {
 	t_symbol	*tmp;
 
 	tmp = *syms;
 	while (tmp)
 	{
-		if (tmp->type == 'U' || tmp->type == 'u')
-			ft_printf(arch & ARCH_64 ? "%17c" : "%9c", ' ');
-		else
-			ft_printf(arch & ARCH_64 ? "%016llx " : "%08llx ", tmp->value);
-		ft_printf("%1c %s\n", tmp->type, tmp->name);
+		if (((tmp->type == 'U' || tmp->type == 'u') && file.opts & OPT_MU)
+		|| (tmp->type != 'U' && tmp->type != 'u' && file.opts & OPT_U))
+		{
+			tmp = tmp->next;
+			continue ;
+		}
+		if (!(file.opts & OPT_U) && !(file.opts & OPT_J))
+		{
+			if (tmp->type == 'U' || tmp->type == 'u')
+				ft_printf(file.arch & ARCH_64 ? "%17c" : "%9c", ' ');
+			else
+				ft_printf(file.arch & ARCH_64 ? "%016llx " : "%08llx ", tmp->value);
+			ft_printf("%1c ", tmp->type);
+		}
+		ft_printf("%s\n", tmp->name);
 		tmp = tmp->next;
 	}
+}
+
+int		dump_symbols(t_file file, t_symbol **syms)
+{
+	if (!(*syms))
+		return (-1);
+	if (!(file.opts & OPT_P))
+	{
+		bubblesort_symbols(syms);
+		if ((file.opts & OPT_R))
+			reverse_symbols(syms);
+	}
+	print_symbols(file, syms);
+	free_symbol(syms);
+	return (0);
 }
 
 void		*new_sect(char type, int n)
@@ -279,16 +329,6 @@ int			get_section_64(t_file file, struct segment_command_64 *sg, t_sect **sect)
 	return (0);
 }
 
-int		dump_symbols(t_symbol **syms, uint8_t arch)
-{
-	if (!(*syms))
-		return (-1);
-	bubblesort_symbols(syms);
-	print_symbols(syms, arch);
-	free_symbol(syms);
-	return (0);
-}
-
 int		get_symbols(t_file file, struct symtab_command *sym, t_sect *sect)
 {
 	int				i;
@@ -320,7 +360,7 @@ int		get_symbols(t_file file, struct symtab_command *sym, t_sect *sect)
 			return (-1);
 		i++;
 	}
-	return (dump_symbols(&syms, file.arch));
+	return (dump_symbols(file, &syms));
 }
 
 int		get_symbols_64(t_file file, struct symtab_command *sym, t_sect *sect)
@@ -351,7 +391,7 @@ int		get_symbols_64(t_file file, struct symtab_command *sym, t_sect *sect)
 			return (-1);
 		i++;
 	}
-	return (dump_symbols(&syms, file.arch));
+	return (dump_symbols(file, &syms));
 }
 
 int			handle_mach(t_file file, int ncmds, struct load_command *lc)
@@ -436,7 +476,7 @@ int			handle_fat_64(t_file file, uint32_t nfat_arch)
 		if (!i)
 			print_binary_arch(file.name, sw32(fat->cputype, file.arch));
 		file.offset = sw64(fat->offset, file.arch);
-		if ((!i && get_arch(file) < 0) || ((uint32_t)i == (nfat_arch + 1) && get_arch(file) < 0))
+		if ((!i && get_arch(file, false) < 0) || ((uint32_t)i == (nfat_arch + 1) && get_arch(file, true) < 0))
 			return (-1);
 		fat = (struct fat_arch_64*)((size_t)fat + sizeof(struct fat_arch_64));
 	}
@@ -460,7 +500,7 @@ int			handle_fat(t_file file, uint32_t nfat_arch)
 		if (!i)
 			print_binary_arch(file.name, sw32(fat->cputype, file.arch));
 		file.offset = sw32(fat->offset, file.arch);
-		if ((!i && get_arch(file) < 0) || ((uint32_t)i == (nfat_arch + 1) && get_arch(file) < 0))
+		if ((!i && get_arch(file, false) < 0) || ((uint32_t)i == (nfat_arch + 1) && get_arch(file, true) < 0))
 			return (-1);
 		fat = (struct fat_arch*)((size_t)fat + sizeof(struct fat_arch));
 	}
@@ -507,7 +547,7 @@ uint8_t		is_mach_arch(uint32_t magic)
 	|| magic == MH_CIGAM || magic == MH_CIGAM_64 ? MACH_O : FAT);
 }
 
-int			get_arch(t_file file)
+int			get_arch(t_file file, bool print_name)
 {
 	struct mach_header	*mh;
 
@@ -522,6 +562,8 @@ int			get_arch(t_file file)
 	mh = (struct mach_header*)file.ptr;
 	file.arch = is_valid_arch(mh->magic) | is_mach_arch(mh->magic)
 	| is_64_arch(mh->magic) | is_cigam_arch(mh->magic);
+	if (print_name && (file.opts >> 8) > 1 && file.arch & MAGIC)
+		ft_printf("\n%s:\n", file.name);
 	if (file.arch & ARCH_VAL && file.arch & MACH_O)
 		return (handle_mach_header(file, mh));
 	else if (file.arch & ARCH_VAL && file.arch & FAT)
@@ -557,22 +599,59 @@ int			init_file(char *name, t_file *file)
 	return (0);
 }
 
+int			get_options(int ac, char **av, uint16_t *opts)
+{
+	int	i;
+	int	j;
+
+	i = 0;
+	while (++i < ac)
+	{
+		j = 0;
+		while (av[i][0] == '-' && av[i][++j])
+		{
+			if (av[i][j] == OPT_F_MU)
+				*opts |= OPT_MU;
+			else if (av[i][j] == OPT_F_U)
+				*opts |= OPT_U;
+			else if (av[i][j] == OPT_F_P)
+				*opts |= OPT_P;
+			else if (av[i][j] == OPT_F_J)
+				*opts |= OPT_J;
+			else if (av[i][j] == OPT_F_R)
+				*opts |= OPT_R;
+			else
+				return (-1);
+		}
+		if (!j)
+			*opts = (((*opts >> 8) + 1) << 8 | (*opts & 0xff));
+	}
+	return (0);
+}
+
 int			main(int ac, char **av)
 {
-	t_file	file;
-	int		err;
+	t_file		file;
+	uint16_t	opts;
+	int			err;
+	int			i;
+	int			j;
 
-	if (ac != 2)
+	i = 0;
+	j = 0;
+	if (get_options(ac, av, &opts) < 0)
 		return (pexit("{red}[NM]{eoc} Invalid agruments\n"));
-	if (init_file(av[1], &file) < 0)
-		return (pexit("{red}[NM]{eoc} An error has occurred\n"));
-	if ((err = get_arch(file)) < 0)
+	while (j < (opts >> 8))
 	{
-		if (err == -2)
-			return (pexit("{red}[NM]{eoc} Unknow file format\n"));
-		else
-			return (pexit("{red}[NM]{eoc} An error has occurred\n"));
+		if (av[++i][0] == '-')
+			continue ;
+		file.opts = opts;
+		if ((err = init_file(av[i], &file)) < 0
+		|| (err = get_arch(file, true)) < 0)
+			return (pexit(err == -2 ? "{red}[NM]{eoc} Unknow file format\n"
+			: "{red}[NM]{eoc} An error has occurred\n"));
+		free(file.name);
+		munmap(file.ptr, file.size);
+		j++;
 	}
-	free(file.name);
-	munmap(file.ptr, file.size);
 }
