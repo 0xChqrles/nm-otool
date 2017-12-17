@@ -6,7 +6,9 @@ CFLAGS		=	-g -Wall -Wextra -Werror
 
 LIBFT_DIR	=	../libft/
 SRCS_DIR	=	srcs/
-SRCS_LIST	=	main.c
+SRCS_LIST	=	arch.c fat.c handle_sections.c handle_types.c \
+				sections.c swap.c check_size.c handle_mach.c \
+				dump_symbols.c main.c sort_symbols.c symbols.c
 SRCS		=	$(addprefix $(SRCS_DIR), $(SRCS_LIST))
 OBJS_DIR	=	objs/
 OBJS_LIST	=	$(patsubst %.c, %.o, $(SRCS_LIST))
