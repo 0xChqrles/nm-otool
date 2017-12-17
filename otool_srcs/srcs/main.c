@@ -63,7 +63,7 @@ int			dump_section(t_file file, uint32_t offset, uint64_t size, uint64_t addr)
 		file.ptr++;
 	}
 	ft_printf("\n");
-	return (0);
+	return (1);
 }
 
 int			get_section(t_file file, struct segment_command *sg)
@@ -112,19 +112,21 @@ int			get_section_64(t_file file, struct segment_command_64 *sg)
 
 int			handle_mach(t_file file, int ncmds, struct load_command *lc)
 {
+	int	res;
+
 	while (ncmds--)
 	{
 		if (sw32(lc->cmd, file.arch) == LC_SEGMENT_64
-		&& get_section_64(file, (struct segment_command_64*)lc) < 0)
-			return (-1);
+		&& (res = get_section_64(file, (struct segment_command_64*)lc)) != 0)
+			return (res);
 		if (sw32(lc->cmd, file.arch) == LC_SEGMENT
-		&& get_section(file, (struct segment_command*)lc) < 0)
-			return (-1);
+		&& (res = get_section(file, (struct segment_command*)lc)) != 0)
+			return (res);
 		if (check_size(&file, sw32(lc->cmdsize, file.arch), F_OFFSET) < 0)
 			return (-1);
 		lc = (void*)((size_t)lc + sw32(lc->cmdsize, file.arch));
 	}
-	return (0);
+	return (-1);
 }
 
 int			handle_mach_header(t_file file, struct mach_header *mh)
