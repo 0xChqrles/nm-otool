@@ -114,10 +114,11 @@ int			handle_mach(t_file file, int ncmds, struct load_command *lc)
 {
 	int	res;
 
+	res = 0;
 	while (ncmds--)
 	{
-		if (sw32(lc->cmd, file.arch) == LC_SEGMENT_64
-		&& (res = get_section_64(file, (struct segment_command_64*)lc)) != 0)
+		if (!res && sw32(lc->cmd, file.arch) == LC_SEGMENT_64
+		&& (res = get_section_64(file, (struct segment_command_64*)lc)) < 0)
 			return (res);
 		if (sw32(lc->cmd, file.arch) == LC_SEGMENT
 		&& (res = get_section(file, (struct segment_command*)lc)) != 0)
@@ -126,7 +127,7 @@ int			handle_mach(t_file file, int ncmds, struct load_command *lc)
 			return (-1);
 		lc = (void*)((size_t)lc + sw32(lc->cmdsize, file.arch));
 	}
-	return (-1);
+	return (res ? 0 : -1);
 }
 
 int			handle_mach_header(t_file file, struct mach_header *mh)
