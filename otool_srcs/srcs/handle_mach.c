@@ -44,7 +44,7 @@ int	handle_mach_header(t_file file, struct mach_header *mh)
 		return (-1);
 	if (file.arch & ARCH_32)
 	{
-		if (check_size(&file, sizeof(struct mach_header_64), F_OFFSET) < 0)
+		if (check_size(&file, sizeof(struct mach_header), F_OFFSET) < 0)
 			return (-1);
 		return (handle_mach(file, sw32(mh->ncmds, file.arch),
 		(struct load_command*)((size_t)file.ptr + sizeof(*mh))));
