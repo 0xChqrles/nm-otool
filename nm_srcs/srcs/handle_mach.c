@@ -12,15 +12,14 @@
 
 #include "nm.h"
 
-uint32_t	get_nvalue_32(struct nlist sym, uint8_t arch)
+void	get_nvalue_32(struct nlist sym, uint32_t *value, uint8_t arch)
 {
 	if ((sym.n_type & N_TYPE) == N_SECT
 	&& sw16(sym.n_desc, arch) == N_ARM_THUMB_DEF)
-		return (sw32(sw32(sym.n_value, arch) | 1, arch));
-	return (sym.n_value);
+		*value = sw32(sw32(sym.n_value, arch) | 1, arch);
 }
 
-int			get_symbols(t_file file, struct symtab_command *sym, t_sect *sect)
+int		get_symbols(t_file file, struct symtab_command *sym, t_sect *sect)
 {
 	int				i;
 	char			*strtab;
@@ -36,20 +35,20 @@ int			get_symbols(t_file file, struct symtab_command *sym, t_sect *sect)
 	{
 		if (symtab[i].n_type & N_STAB && ++i)
 			continue;
-		symtab[i].n_value = get_nvalue_32(symtab[i], file.arch);
+		get_nvalue_32(symtab[i], &(symtab[i].n_value), file.arch);
 		type = get_type(sw32(symtab[i].n_value, file.arch),
 		symtab[i].n_sect, symtab[i].n_type, sect);
 		if (add_symbol(&syms, sw32(symtab[i].n_value, file.arch),
 		type, strtab + sw32(symtab[i].n_un.n_strx, file.arch)) < 0
-		|| check_size(&file, sw32(sym->symoff, file.arch) + (i + 1)
-		* sizeof(struct nlist), F_BEGIN) < 0)
+		|| check_strtab(file, strtab, sw32(sym->symoff, file.arch) + (i + 1)
+		* sizeof(struct nlist), sw32(sym->stroff, file.arch)
+		+ sw32(symtab[i].n_un.n_strx, file.arch)) < 0 || !(++i))
 			return (-1);
-		i++;
 	}
 	return (dump_symbols(file, &syms));
 }
 
-int			get_symbols_64(t_file file,
+int		get_symbols_64(t_file file,
 struct symtab_command *sym, t_sect *sect)
 {
 	int				i;
@@ -71,15 +70,15 @@ struct symtab_command *sym, t_sect *sect)
 		symtab[i].n_sect, symtab[i].n_type, sect);
 		if (add_symbol(&syms, sw64(symtab[i].n_value, file.arch),
 		type, strtab + sw32(symtab[i].n_un.n_strx, file.arch)) < 0
-		|| check_size(&file, sw32(sym->symoff, file.arch) + (i + 1)
-		* sizeof(struct nlist_64), F_BEGIN) < 0)
+		|| check_strtab(file, strtab, sw32(sym->symoff, file.arch) + (i + 1)
+		* sizeof(struct nlist), sw32(sym->stroff, file.arch)
+		+ sw32(symtab[i].n_un.n_strx, file.arch)) < 0 || !(++i))
 			return (-1);
-		i++;
 	}
 	return (dump_symbols(file, &syms));
 }
 
-int			handle_mach(t_file file, int ncmds, struct load_command *lc)
+int		handle_mach(t_file file, int ncmds, struct load_command *lc)
 {
 	t_sect					*sect;
 	struct symtab_command	*sym;
@@ -91,13 +90,14 @@ int			handle_mach(t_file file, int ncmds, struct load_command *lc)
 		if (sw32(lc->cmd, file.arch) == LC_SYMTAB
 		&& (sym_offset = file.free_size))
 			sym = (struct symtab_command*)lc;
-		else if (sw32(lc->cmd, file.arch) == LC_SEGMENT_64
+		if ((sw32(lc->cmd, file.arch) == LC_SEGMENT_64
 		&& get_section_64(file, (struct segment_command_64*)lc, &sect) < 0)
+		|| (sw32(lc->cmd, file.arch) == LC_SEGMENT
+		&& get_section(file, (struct segment_command*)lc, &sect) < 0))
 			return (-1);
-		else if (sw32(lc->cmd, file.arch) == LC_SEGMENT
-		&& get_section(file, (struct segment_command*)lc, &sect) < 0)
-			return (-1);
-		if (check_size(&file, sw32(lc->cmdsize, file.arch), F_OFFSET) < 0)
+		if (check_size(&file, sw32(lc->cmdsize, file.arch), F_OFFSET) < 0
+		|| !lc->cmdsize || (file.arch & ARCH_64 && lc->cmdsize % 8)
+		|| (file.arch & ARCH_64 && lc->cmdsize % 4))
 			return (-1);
 		lc = (void*)((size_t)lc + sw32(lc->cmdsize, file.arch));
 	}
@@ -107,7 +107,7 @@ int			handle_mach(t_file file, int ncmds, struct load_command *lc)
 	return (0);
 }
 
-int			handle_mach_header(t_file file, struct mach_header *mh)
+int		handle_mach_header(t_file file, struct mach_header *mh)
 {
 	struct mach_header_64	*mh_64;
 

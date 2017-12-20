@@ -26,7 +26,8 @@
 # define F_OFFSET	0b10
 
 # define OPT_F_D	'd'
-# define OPT_D		0b1
+# define OPT_D		0b00000001
+# define OPT_ERR	0b10000000
 
 # include <sys/mman.h>
 # include <mach-o/loader.h>
@@ -48,6 +49,7 @@ typedef struct	s_file
 	uint8_t		arch;
 	uint64_t	offset;
 	uint16_t	opts;
+	bool		print_name;
 }				t_file;
 
 typedef struct	s_txt_section

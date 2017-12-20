@@ -33,6 +33,7 @@ int			init_file(char *name, t_file *file)
 	file->free_size = buf.st_size;
 	file->arch = 0;
 	file->offset = 0;
+	file->print_name = false;
 	return (0);
 }
 
@@ -70,17 +71,19 @@ int			main(int ac, char **av)
 	j = 0;
 	if (get_options(ac, av, &opts) < 0)
 		return (pexit("{red}[NM]{eoc} Invalid agruments\n"));
-	while (j < (opts >> 8))
+	while (j < (opts >> 8) && !(file.name = NULL))
 	{
 		if (av[++i][0] == '-')
 			continue ;
 		file.opts = opts;
-		if ((err = init_file(av[i], &file)) < 0
-		|| (err = get_arch(file, true)) < 0)
-			return (pexit(err == -2 ? "{red}[NM]{eoc} Unknow file format\n"
-			: "{red}[NM]{eoc} An error has occurred\n"));
-			free(file.name);
+		if (((err = init_file(av[i], &file)) < 0
+		|| (err = get_arch(file, true)) < 0) && (opts = opts | OPT_ERR))
+			ft_printf("{red}[OTOOL]{eoc} %s : %s\n",
+			av[i], err == -2 ? "An error has occurred" : "Unknow file format");
+		if (++j && !file.name)
+			continue;
+		free(file.name);
 		munmap(file.ptr, file.size);
-		j++;
 	}
+	return (opts & OPT_ERR ? EXIT_FAILURE : EXIT_SUCCESS);
 }

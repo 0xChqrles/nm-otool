@@ -54,7 +54,7 @@ int		get_arch(t_file file, bool print_name)
 	file.arch = is_valid_arch(mh->magic) | is_mach_arch(mh->magic)
 	| is_64_arch(mh->magic) | is_cigam_arch(mh->magic);
 	if (print_name && (file.opts >> 8) > 1 && file.arch & MAGIC)
-		ft_printf("\n%s:\n", file.name);
+		file.print_name = true;
 	if (file.arch & ARCH_VAL && file.arch & MACH_O)
 		return (handle_mach_header(file, mh));
 	else if (file.arch & ARCH_VAL && file.arch & FAT)

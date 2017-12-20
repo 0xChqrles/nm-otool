@@ -30,11 +30,12 @@
 # define OPT_F_P	'p'
 # define OPT_F_J	'j'
 # define OPT_F_R	'r'
-# define OPT_MU		0b00001
-# define OPT_U		0b00010
-# define OPT_P		0b00100
-# define OPT_J		0b01000
-# define OPT_R		0b10000
+# define OPT_MU		0b00000001
+# define OPT_U		0b00000010
+# define OPT_P		0b00000100
+# define OPT_J		0b00001000
+# define OPT_R		0b00010000
+# define OPT_ERR	0b10000000
 
 # include <sys/mman.h>
 # include <mach-o/loader.h>
@@ -71,6 +72,7 @@ typedef struct		s_file
 	uint8_t			arch;
 	uint64_t		offset;
 	uint16_t		opts;
+	bool			print_name;
 }					t_file;
 
 uint8_t				is_valid_arch(uint32_t magic);
@@ -79,13 +81,15 @@ uint8_t				is_cigam_arch(uint32_t magic);
 uint8_t				is_mach_arch(uint32_t magic);
 int					get_arch(t_file file, bool print_name);
 int					check_size(t_file *file, long int size, uint8_t flag);
+int					check_strtab(t_file file, char *strtab,
+					int64_t symoff, uint32_t stroff);
 int					check_symtab(t_file file, struct symtab_command *sym,
 					size_t sym_offset, t_sect *sect);
 void				print_binary_arch(char *name, cpu_type_t cpu);
 int					handle_fat_64(t_file file, uint32_t nfat_arch);
 int					handle_fat(t_file file, uint32_t nfat_arch);
 int					handle_fat_header(t_file file);
-uint32_t			get_nvalue_32(struct nlist sym, uint8_t arch);
+void				get_nvalue_32(struct nlist sym, uint32_t *value, uint8_t arch);
 int					handle_mach(t_file file,
 					int ncmds, struct load_command *lc);
 int					handle_mach_header(t_file file, struct mach_header *mh);

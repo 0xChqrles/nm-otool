@@ -18,7 +18,7 @@ void	dump_section(t_file file, uint32_t offset, uint64_t size, uint64_t addr)
 
 	i = 0;
 	file.ptr = (char*)((size_t)file.ptr + offset);
-	ft_printf("Contents of %s section", file.opts & OPT_D
+	ft_printf("%s:\nContents of %s section", file.name, file.opts & OPT_D
 	? "(__DATA,__data)" : "(__TEXT,__text)");
 	while (i < size)
 	{

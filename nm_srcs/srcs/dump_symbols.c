@@ -17,6 +17,8 @@ void	print_symbols(t_file file, t_symbol **syms)
 	t_symbol	*tmp;
 
 	tmp = *syms;
+	if (file.print_name)
+		ft_printf("\n%s:\n", file.name);
 	while (tmp)
 	{
 		if (((tmp->type == 'U' || tmp->type == 'u') && file.opts & OPT_MU)

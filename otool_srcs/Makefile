@@ -37,7 +37,7 @@ clean :
 	@rm -rf $(OBJS_DIR)
 	@echo "\033[31mObjects files \033[1;31m$(OBJS_LIST)\033[1;0m\033[31m removed.\033[0m"
 
-fclean :
+fclean : clean
 	@rm -rf $(OBJS_DIR)
 	@rm -rf $(NAME)
 	@echo "\033[31mBin \033[1;31m$(NAME)\033[1;0m\033[31m removed.\033[0m"

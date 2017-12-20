@@ -21,6 +21,20 @@ int	check_size(t_file *file, long int size, uint8_t flag)
 	return (0);
 }
 
+int		check_strtab(t_file file, char *strtab, int64_t symoff, uint32_t stroff)
+{
+	int		i;
+
+	i = 0;
+	if (check_size(&file, symoff, F_BEGIN) < 0
+	|| check_size(&file, stroff, F_BEGIN) < 0)
+		return (-1);
+	while (strtab[i++])
+		if (check_size(&file, stroff + i, F_BEGIN) < 0)
+			return (-1);
+	return (0);
+}
+
 int	check_symtab(t_file file, struct symtab_command *sym,
 size_t sym_offset, t_sect *sect)
 {
